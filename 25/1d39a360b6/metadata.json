@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "251d39a360b6",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "REAL_NETWORK_TESTING_SUMMARY.md",
+    "scripts/test_track_f_real.py",
+    "scripts/test_track_g_real.py",
+    "src/chaoswopr/agents/__init__.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/25/1d39a360b6/0/metadata.json",
+      "transcript": "/25/1d39a360b6/0/full.jsonl",
+      "context": "/25/1d39a360b6/0/context.md",
+      "content_hash": "/25/1d39a360b6/0/content_hash.txt",
+      "prompt": "/25/1d39a360b6/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 292,
+    "cache_creation_tokens": 74496,
+    "cache_read_tokens": 4484571,
+    "output_tokens": 6843,
+    "api_call_count": 36
+  }
+}
