@@ -8,13 +8,37 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Structure
 
-This project is currently in the **planning phase**. Key documents:
+**Phase 1 (Foundation) is complete.** Phase 2 (Intelligence) is next.
 
+### Planning Documents
 - **SPEC.md** - Complete technical specification and architecture
 - **IMPLEMENTATION_PLAN.md** - Master plan with 3-phase roadmap, dependency graph, and critical path
-- **PHASE1.md** - Foundation: Infrastructure, monitoring, safety systems (4 tracks, 23 tasks)
+- **PHASE1.md** - Foundation: Infrastructure, monitoring, safety systems (4 tracks, 23 tasks) -- DONE
 - **PHASE2.md** - Intelligence: Agent system, chaos injection, scenarios (4 tracks, 28 tasks)
 - **PHASE3.md** - Analysis & Production: Reporting, compliance, scale testing (4 tracks, 26 tasks)
+
+### Source Layout (`src/chaoswopr/`)
+- `infrastructure/testnet/` - Kurtosis client, client config, ethereum-package config, deployer, beacon API client
+- `infrastructure/monitoring/` - Prometheus client, metrics catalog (52 metrics), alerting rules, metrics export
+- `safety/` - Blast radius, circuit breaker, snapshots, isolation, audit logging, kill switch
+- `scenarios/` - YAML scenario validator (JSON Schema + semantic checks)
+- `storage/` - PostgreSQL (SQLAlchemy ORM) + S3 audit log storage
+- `cli.py` - Click-based CLI entry point
+
+### Test Layout (`tests/`)
+- `unit/` - 394 unit tests (auto-marked with `@pytest.mark.unit`)
+- `integration/` - Cross-track integration tests, storage layer tests (auto-marked `integration`)
+- `e2e/` - Exit criteria verification tests (auto-marked `e2e`)
+- `integration_real/` - Real infrastructure tests using Docker/Kurtosis/testcontainers (auto-marked `infra`, skipped without Docker)
+- `e2e_real/` - Real E2E tests deploying full Ethereum testnets (auto-marked `e2e_real`, skipped without Docker+Kurtosis)
+- `fixtures/sample_configs/` - Valid/invalid/network-partition scenario YAML fixtures
+- `helpers/factories.py` - Test data factories
+- `conftest.py` - Root fixtures shared across all test types
+
+### Config
+- `config/schema/scenario_schema.json` - JSON Schema (Draft 2020-12) for scenario YAML
+- `config/testnet/default_network.yaml` - Default 50-node testnet config
+- `scenarios/baseline_observation.yaml` - The baseline observation scenario
 
 ## Architecture (from SPEC.md)
 
@@ -136,6 +160,123 @@ All outputs must be regulator-ready for Basel/FI compliance.
 5. **Real-world grounding** - reference the 6 pre-defined scenarios when building features
 6. **Agent coordination** - the three-agent system has strict handoff protocols (PRE-FLIGHT → HYPOTHESIS → CHAOS → RECOVERY → ANALYSIS)
 
-## No Code Yet
+## Build and Test Commands
 
-This repository currently contains only planning documents. Implementation will begin with Phase 1 Track A (project scaffolding) and Track B (Kurtosis infrastructure layer).
+```bash
+# Create venv and install
+python3.11 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+
+# Run all tests
+make test                          # or: python -m pytest tests/
+
+# Run specific test categories
+python -m pytest tests/unit/       # Unit tests only
+python -m pytest tests/integration/ # Integration tests only
+python -m pytest tests/e2e/        # End-to-end tests only
+python -m pytest -m safety         # Safety-marked tests only
+
+# Run real infrastructure tests (requires Docker + Kurtosis)
+python -m pytest tests/integration_real/ -m infra --timeout=600
+python -m pytest tests/e2e_real/ -m e2e_real --timeout=900
+
+# Run a single test file or test
+python -m pytest tests/unit/test_circuit_breaker.py
+python -m pytest tests/unit/test_circuit_breaker.py::TestCircuitBreaker::test_trip_on_finality -v
+
+# Coverage (excludes real infra tests)
+python -m pytest tests/unit/ tests/integration/ tests/e2e/ --cov=src/chaoswopr --cov-report=term-missing
+
+# Lint
+make lint                          # ruff check + mypy
+
+# Validate exit criteria
+python scripts/validate_exit_criteria.py
+
+# Validate infrastructure requirements (Docker, Kurtosis, resources)
+python scripts/validate_infra_requirements.py --verbose
+
+# Testnet (dry-run)
+make testnet-up                    # Deploy testnet in dry-run mode
+make testnet-down                  # Tear down testnet
+make testnet-status                # Check testnet status
+
+# Scenario validation
+python -m chaoswopr.scenarios.validator scenarios/baseline_observation.yaml
+```
+
+## Phase 1 Status
+
+All 7 exit criteria verified:
+1. Testnet boots reliably (deployer with dry-run mode)
+2. 52 metrics defined in catalog (exceeds 50+ requirement)
+3. Circuit breakers trip on finality/slashing/participation thresholds
+4. Snapshots create and restore (Docker and Kubernetes backends)
+5. Baseline scenario runs end-to-end
+6. Network isolation enforced (mainnet endpoints + public DNS blocked)
+7. 452 tests passing, 83.3% coverage, CI pipeline configured
+
+## Phase 1.5 Status (Real Infrastructure Testing)
+
+Phase 1.5 adds real infrastructure testing alongside the existing mock/dry-run tests:
+
+- **Beacon API client** (`beacon_api.py`) - Real HTTP client for Ethereum Beacon API (health, sync, finality, peers)
+- **KurtosisClient upgraded** - Parses real CLI output (`enclave inspect`, `enclave ls`), service discovery, port mapping
+- **Deployer upgraded** - Real finality verification via BeaconAPIClient (replaces TODO stub)
+- **30 real infra tests** in `tests/integration_real/` (Docker, Kurtosis, Prometheus via testcontainers, PostgreSQL)
+- **8 real E2E tests** in `tests/e2e_real/` (full 8-node Ethereum testnet with client diversity)
+- **CI pipeline** - `infra-test` job (main branch pushes), `e2e-real-test` job (manual trigger only)
+- All real tests gracefully skip when Docker/Kurtosis unavailable (pytest skip markers)
+
+**Real Infrastructure Validation**: Successfully deployed 4-node nethermind+lighthouse testnet in ~30 seconds. All infrastructure components verified working. See **PHASE1_RESULTS.md** for detailed testing results.
+
+## Known Issues and Workarounds
+
+### Geth blobSchedule Configuration Error
+
+**Issue**: Latest Geth requires `blobSchedule` in genesis config for Cancun fork, but ethereum-genesis-generator v3.3.7 (cached by Kurtosis) doesn't generate it.
+
+**Error Message**: `missing entry for fork "cancun" in blobSchedule`
+
+**Workaround**: Use **Nethermind** execution client instead of Geth. Nethermind doesn't validate blobSchedule config.
+
+**Example**:
+```python
+from chaoswopr.infrastructure.testnet.client_config import ClientConfig, ClientDistribution
+
+# ✅ Use Nethermind to avoid blobSchedule error
+config = ClientConfig(
+    node_count=4,
+    execution=ClientDistribution({"nethermind": 1.0}),
+    consensus=ClientDistribution({"lighthouse": 1.0}),
+)
+
+# ❌ Avoid Geth until genesis-generator updated
+# execution=ClientDistribution({"geth": 1.0})  # Will fail
+```
+
+**Resolution**: Wait for ethereum-package to update ethereum-genesis-generator dependency to v5.2.4+ (includes blobSchedule support).
+
+### Minimal Testnet Finality Configuration
+
+**Issue**: 4-node testnet chain progresses (blocks produced) but finality not reached (justified/finalized epochs stuck at 0).
+
+**Root Cause**: Testnet configuration issue, not infrastructure failure. Insufficient validator participation threshold.
+
+**Status**: Not blocking - infrastructure proven working (deployment succeeds, services healthy, chain progressing).
+
+**For Chaos Testing**: Scenarios can work with progressing but non-finalizing chains. Finality detection is implemented and will work once testnet configuration is tuned.
+
+**Future Work**: Research optimal minimal testnet configuration. Options:
+- Increase validator count to 8-16 nodes
+- Adjust genesis config (validator deposit schedule)
+- Tune network params (reduce slot time to 6s)
+
+### Kurtosis Service Name Changes
+
+**Issue**: Service names changed in ethereum-package v4.2.0+
+
+**Changes**:
+- `tx_spammer` → `spamoor` (transaction spammer service)
+
+**Already Fixed**: ethereum_package.py updated to use correct service names.

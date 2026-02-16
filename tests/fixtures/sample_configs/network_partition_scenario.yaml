@@ -1,0 +1,61 @@
+version: "1.0"
+name: network_partition_test
+description: >
+  Test network partition scenario - splits the network into two groups
+  and observes consensus behavior in each partition.
+hypothesis: >
+  When 30% of validators are partitioned from the network,
+  the majority partition continues to finalize while the minority
+  partition halts until the partition is healed
+network_config:
+  node_count: 100
+  client_distribution:
+    execution:
+      nethermind: 0.4
+      geth: 0.3
+      besu: 0.15
+      erigon: 0.15
+    consensus:
+      prysm: 0.4
+      lighthouse: 0.3
+      teku: 0.15
+      nimbus: 0.15
+fault_sequence:
+  - time: "0s"
+    action: baseline
+    description: "Establish baseline metrics"
+  - time: "60s"
+    action: inject_network_partition
+    description: "Partition 30% of validators"
+    params:
+      nodes: "30%"
+      partition_groups:
+        - name: majority
+          nodes: "70%"
+        - name: minority
+          nodes: "30%"
+  - time: "360s"
+    action: remove_faults
+    description: "Heal the partition"
+  - time: "600s"
+    action: complete
+    description: "End experiment and collect results"
+slo_thresholds:
+  finality_delay_max_epochs: 5
+  slashing_rate_max_percent: 5.0
+  participation_rate_min_percent: 66.0
+  recovery_time_max_seconds: 300
+blast_radius:
+  max_affected_percent: 30.0
+  phased_rollout:
+    - 5.0
+    - 10.0
+    - 20.0
+    - 30.0
+success_criteria: >
+  Majority partition continues finalizing. Network fully recovers
+  within 5 minutes after partition is healed. No unjust slashing occurs.
+tags:
+  - network-partition
+  - byzantine
+timeout: "15m"

@@ -1,0 +1,48 @@
+version: "1.0"
+name: baseline_observation
+description: >
+  No-fault baseline observation scenario for smoke testing.
+  Validates the scenario execution pipeline end-to-end with zero fault injection.
+hypothesis: >
+  The network maintains healthy finality and participation rates
+  with no faults injected over a 10-minute observation window
+network_config:
+  node_count: 50
+  client_distribution:
+    execution:
+      nethermind: 0.4
+      geth: 0.3
+      besu: 0.15
+      erigon: 0.15
+    consensus:
+      prysm: 0.4
+      lighthouse: 0.3
+      teku: 0.15
+      nimbus: 0.15
+  mev_enabled: false
+  tx_spammer_tps: 100
+fault_sequence:
+  - time: "0s"
+    action: baseline
+    description: "Begin baseline observation with no faults"
+  - time: "300s"
+    action: observe
+    description: "Mid-point health check"
+  - time: "600s"
+    action: complete
+    description: "End observation period and collect results"
+slo_thresholds:
+  finality_delay_max_epochs: 5
+  slashing_rate_max_percent: 5.0
+  participation_rate_min_percent: 66.0
+  recovery_time_max_seconds: 300
+blast_radius:
+  max_affected_percent: 0.0
+  phased_rollout: []
+success_criteria: >
+  Finality maintained within normal parameters (< 2 epochs delay)
+  and participation rate stays above 95% throughout the observation window
+tags:
+  - baseline
+  - smoke-test
+timeout: "15m"

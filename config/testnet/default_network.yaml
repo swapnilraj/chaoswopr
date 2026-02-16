@@ -1,0 +1,31 @@
+# Default network configuration for chaoswopr testnets
+# This is read by the Kurtosis deployment scripts
+
+network_config:
+  node_count: 50
+  client_distribution:
+    execution:
+      nethermind: 0.40
+      geth: 0.30
+      besu: 0.15
+      erigon: 0.15
+    consensus:
+      prysm: 0.40
+      lighthouse: 0.30
+      teku: 0.15
+      nimbus: 0.15
+  mev_enabled: false
+  tx_spammer_tps: 100
+
+fork_config:
+  enabled: false
+  block_number: 0
+  rpc_url: ""
+
+mev_config:
+  enabled: false
+  relay_type: flashbots
+
+spammer_config:
+  enabled: true
+  tps: 100

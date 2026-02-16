@@ -1,0 +1,59 @@
+version: "1.0"
+name: baseline_observation
+description: >
+  No-fault baseline observation scenario.
+  Runs the full pre-flight, observation, and analysis workflow with zero fault injection.
+  This validates the scenario execution pipeline end-to-end and establishes
+  baseline metrics for comparison with chaos experiments.
+hypothesis: >
+  The Ethereum testnet maintains healthy finality (within 2 epochs)
+  and high participation rate (above 95%) with no faults injected
+  over a 10-minute observation window
+network_config:
+  node_count: 50
+  client_distribution:
+    execution:
+      nethermind: 0.4
+      geth: 0.3
+      besu: 0.15
+      erigon: 0.15
+    consensus:
+      prysm: 0.4
+      lighthouse: 0.3
+      teku: 0.15
+      nimbus: 0.15
+  mev_enabled: false
+  tx_spammer_tps: 100
+fault_sequence:
+  - time: "0s"
+    action: baseline
+    description: >
+      Begin baseline observation. Orchestrator runs pre-flight health checks,
+      establishes baseline metrics (avg finality, participation rate, peer counts).
+  - time: "300s"
+    action: observe
+    description: >
+      Mid-point health check. Observer agent verifies all metrics are within
+      normal ranges and no anomalies have been detected.
+  - time: "600s"
+    action: complete
+    description: >
+      End observation period. Collect final metrics, write to PostgreSQL,
+      generate audit log entries, produce baseline report.
+slo_thresholds:
+  finality_delay_max_epochs: 5
+  slashing_rate_max_percent: 5.0
+  participation_rate_min_percent: 66.0
+  recovery_time_max_seconds: 300
+blast_radius:
+  max_affected_percent: 0.0
+  phased_rollout: []
+success_criteria: >
+  Finality maintained within normal parameters (less than 2 epoch delay)
+  and participation rate stays above 95% throughout the observation window.
+  All metrics are recorded to PostgreSQL and audit log is written to S3.
+tags:
+  - baseline
+  - smoke-test
+  - phase1
+timeout: "15m"

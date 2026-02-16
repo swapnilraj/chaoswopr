@@ -1,0 +1,296 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chaoswopr.dev/schemas/scenario/v1",
+  "title": "ChaosWopr Scenario Schema",
+  "description": "Schema for defining chaos engineering experiment scenarios against Ethereum testnets",
+  "type": "object",
+  "required": [
+    "version",
+    "name",
+    "hypothesis",
+    "fault_sequence",
+    "slo_thresholds",
+    "blast_radius",
+    "success_criteria"
+  ],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Schema version",
+      "pattern": "^\\d+\\.\\d+$",
+      "examples": ["1.0"]
+    },
+    "name": {
+      "type": "string",
+      "description": "Unique scenario name (snake_case)",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable description of the scenario",
+      "maxLength": 1000
+    },
+    "hypothesis": {
+      "type": "string",
+      "description": "The hypothesis being tested (e.g., 'Network can finalize with 40% validators offline')",
+      "minLength": 10,
+      "maxLength": 500
+    },
+    "network_config": {
+      "type": "object",
+      "description": "Network configuration for the experiment",
+      "properties": {
+        "node_count": {
+          "type": "integer",
+          "description": "Total number of nodes in the testnet",
+          "minimum": 4,
+          "maximum": 500
+        },
+        "client_distribution": {
+          "type": "object",
+          "description": "Client type distribution ratios",
+          "properties": {
+            "execution": {
+              "type": "object",
+              "description": "Execution client distribution (must sum to 1.0)",
+              "additionalProperties": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            },
+            "consensus": {
+              "type": "object",
+              "description": "Consensus client distribution (must sum to 1.0)",
+              "additionalProperties": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            }
+          }
+        },
+        "fork_block": {
+          "type": "integer",
+          "description": "Mainnet block number to fork from (optional)",
+          "minimum": 0
+        },
+        "mev_enabled": {
+          "type": "boolean",
+          "description": "Whether to enable MEV-boost infrastructure",
+          "default": false
+        },
+        "tx_spammer_tps": {
+          "type": "integer",
+          "description": "Target transactions per second for the spammer",
+          "minimum": 0,
+          "maximum": 10000,
+          "default": 100
+        }
+      },
+      "required": ["node_count"]
+    },
+    "fault_sequence": {
+      "type": "array",
+      "description": "Ordered sequence of fault injection actions",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["time", "action"],
+        "properties": {
+          "time": {
+            "type": "string",
+            "description": "Time offset from experiment start (e.g., '0s', '60s', '5m')",
+            "pattern": "^\\d+[smh]$"
+          },
+          "action": {
+            "type": "string",
+            "description": "Fault injection action type",
+            "enum": [
+              "baseline",
+              "observe",
+              "complete",
+              "inject_network_latency",
+              "inject_packet_drops",
+              "inject_bandwidth_throttle",
+              "inject_network_partition",
+              "kill_nodes",
+              "inject_cpu_stress",
+              "inject_memory_stress",
+              "inject_disk_io_throttle",
+              "withhold_attestations",
+              "delay_attestations",
+              "equivocate_blocks",
+              "censor_transactions",
+              "coordinate_exits",
+              "manipulate_mev",
+              "remove_faults",
+              "restore_snapshot"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "description": "Human-readable description of this step"
+          },
+          "params": {
+            "type": "object",
+            "description": "Action-specific parameters",
+            "properties": {
+              "nodes": {
+                "type": "string",
+                "description": "Target node selector (e.g., '20%', 'prysm:50%', 'node-1,node-5')"
+              },
+              "latency": {
+                "type": "string",
+                "description": "Latency to inject (e.g., '200ms', '1s')"
+              },
+              "drop_rate": {
+                "type": "number",
+                "description": "Packet drop rate (0.0 to 1.0)",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "bandwidth": {
+                "type": "string",
+                "description": "Bandwidth limit (e.g., '1mbps', '100kbps')"
+              },
+              "duration": {
+                "type": "string",
+                "description": "Duration of the fault (e.g., '60s', '5m')"
+              },
+              "partition_groups": {
+                "type": "array",
+                "description": "Network partition group definitions",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {"type": "string"},
+                    "nodes": {"type": "string"}
+                  }
+                }
+              },
+              "withhold_probability": {
+                "type": "number",
+                "description": "Probability of withholding an attestation (0.0 to 1.0)",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "delay_ms": {
+                "type": "integer",
+                "description": "Delay in milliseconds for attestation delay",
+                "minimum": 0,
+                "maximum": 30000
+              },
+              "exit_percent": {
+                "type": "number",
+                "description": "Percentage of validators to trigger exit for",
+                "minimum": 0,
+                "maximum": 100
+              },
+              "cpu_percent": {
+                "type": "integer",
+                "description": "CPU stress percentage",
+                "minimum": 0,
+                "maximum": 100
+              },
+              "memory_bytes": {
+                "type": "string",
+                "description": "Memory stress amount (e.g., '512Mi', '2Gi')"
+              },
+              "client_type": {
+                "type": "string",
+                "description": "Target specific client type (e.g., 'prysm', 'nethermind')"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    "slo_thresholds": {
+      "type": "object",
+      "description": "Service Level Objective thresholds for the experiment",
+      "required": [
+        "finality_delay_max_epochs",
+        "slashing_rate_max_percent",
+        "participation_rate_min_percent"
+      ],
+      "properties": {
+        "finality_delay_max_epochs": {
+          "type": "integer",
+          "description": "Maximum acceptable finality delay in epochs",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "slashing_rate_max_percent": {
+          "type": "number",
+          "description": "Maximum acceptable slashing rate as a percentage",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "participation_rate_min_percent": {
+          "type": "number",
+          "description": "Minimum acceptable participation rate as a percentage",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "recovery_time_max_seconds": {
+          "type": "integer",
+          "description": "Maximum acceptable recovery time in seconds",
+          "minimum": 0
+        }
+      }
+    },
+    "blast_radius": {
+      "type": "object",
+      "description": "Blast radius configuration for safety limits",
+      "required": ["max_affected_percent"],
+      "properties": {
+        "max_affected_percent": {
+          "type": "number",
+          "description": "Maximum percentage of nodes that can be affected simultaneously",
+          "minimum": 0,
+          "maximum": 33
+        },
+        "phased_rollout": {
+          "type": "array",
+          "description": "Percentages for phased fault rollout (e.g., [5, 10, 20])",
+          "items": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 33
+          }
+        },
+        "per_client_max_percent": {
+          "type": "number",
+          "description": "Maximum percentage of any single client type that can be affected",
+          "minimum": 0,
+          "maximum": 100
+        }
+      }
+    },
+    "success_criteria": {
+      "type": "string",
+      "description": "Human-readable success criteria (e.g., 'Finality maintained OR recovered in <5min')",
+      "minLength": 10,
+      "maxLength": 500
+    },
+    "tags": {
+      "type": "array",
+      "description": "Tags for categorizing and filtering scenarios",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]*$"
+      }
+    },
+    "timeout": {
+      "type": "string",
+      "description": "Maximum experiment duration (e.g., '30m', '1h')",
+      "pattern": "^\\d+[smh]$",
+      "default": "30m"
+    }
+  },
+  "additionalProperties": false
+}
