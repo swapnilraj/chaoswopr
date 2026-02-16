@@ -13,6 +13,7 @@ from typing import Generator
 import pytest
 
 from chaoswopr.infrastructure.testnet.kurtosis_client import KurtosisClient
+from chaoswopr.infrastructure.testnet.chaos_testnet import create_chaos_testnet
 
 
 def _is_docker_running() -> bool:
@@ -112,5 +113,32 @@ def kurtosis_enclave(
     # Always cleanup, even on test failure
     try:
         kurtosis_client.destroy_enclave(unique_enclave_name)
+    except Exception:
+        pass
+
+
+@pytest.fixture
+def chaos_testnet_4node(
+    unique_enclave_name: str,
+) -> Generator:
+    """Deploy a 4-node testnet with NET_ADMIN for chaos injection.
+
+    This fixture deploys a testnet and adds NET_ADMIN capability to all
+    containers, enabling tc/netem network fault injection.
+
+    Yields:
+        Tuple of (deployer, deployment_result)
+    """
+    deployer, result = create_chaos_testnet(
+        node_count=4,
+        enclave_name=unique_enclave_name,
+        dry_run=False,
+    )
+
+    yield deployer, result
+
+    # Cleanup
+    try:
+        deployer.destroy()
     except Exception:
         pass

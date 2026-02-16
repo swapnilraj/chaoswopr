@@ -59,7 +59,7 @@ class TestRealNetworkFaults:
             client_config=ClientConfig(
                 node_count=4,
                 execution=ClientDistribution({"nethermind": 1.0}),
-                consensus=ClientDistribution({"lighthouse": 1.0}),
+                consensus=ClientDistribution({"prysm": 1.0}),
             ),
         )
 
@@ -94,13 +94,18 @@ class TestRealNetworkFaults:
         if not result.success:
             pytest.skip(f"Testnet deployment failed: {result.error_message}")
 
-        # Get service containers
+        # Get service containers - use EL (execution layer) containers as they have package managers
         services = kurtosis_client.get_services(unique_enclave_name)
         if len(services) < 2:
             pytest.skip("Not enough services for testing")
 
+        # Filter for EL containers (they start with "el-" and have package managers for installing tc)
+        el_services = [s for s in services if s.name.startswith("el-")]
+        if len(el_services) < 2:
+            pytest.skip("Not enough EL services for testing")
+
         # Get container names (just the service names, not full container IDs)
-        container_names = [s.name for s in services[:2]]  # Test with 2 nodes
+        container_names = [s.name for s in el_services[:2]]  # Test with 2 EL nodes
 
         # Create network fault injector
         injector = NetworkFaultInjector(dry_run=False)
@@ -149,10 +154,11 @@ class TestRealNetworkFaults:
             pytest.skip(f"Testnet deployment failed: {result.error_message}")
 
         services = kurtosis_client.get_services(unique_enclave_name)
-        if len(services) < 1:
-            pytest.skip("No services available")
+        el_services = [s for s in services if s.name.startswith("el-")]
+        if len(el_services) < 1:
+            pytest.skip("No EL services available")
 
-        container_names = [services[0].name]
+        container_names = [el_services[0].name]
 
         injector = NetworkFaultInjector(dry_run=False)
 
@@ -189,7 +195,7 @@ class TestRealNetworkPartitions:
             client_config=ClientConfig(
                 node_count=4,
                 execution=ClientDistribution({"nethermind": 1.0}),
-                consensus=ClientDistribution({"lighthouse": 1.0}),
+                consensus=ClientDistribution({"prysm": 1.0}),
             ),
         )
 
@@ -280,7 +286,7 @@ class TestRealSafetyIntegration:
             client_config=ClientConfig(
                 node_count=4,
                 execution=ClientDistribution({"nethermind": 1.0}),
-                consensus=ClientDistribution({"lighthouse": 1.0}),
+                consensus=ClientDistribution({"prysm": 1.0}),
             ),
         )
 
@@ -375,7 +381,7 @@ class TestRealCleanupDaemon:
             client_config=ClientConfig(
                 node_count=4,
                 execution=ClientDistribution({"nethermind": 1.0}),
-                consensus=ClientDistribution({"lighthouse": 1.0}),
+                consensus=ClientDistribution({"prysm": 1.0}),
             ),
         )
 

@@ -254,6 +254,10 @@ class NetworkFaultInjector:
             print(f"[DRY-RUN] Would inject {fault.fault_type.value} to container {container}")
             return
 
+        # Resolve container name and ensure tc is installed
+        container_name = self._resolve_container_name(container)
+        self._ensure_tc_installed(container_name)
+
         # Build tc/netem command
         cmd = self._build_tc_command(container, fault)
 
@@ -266,8 +270,14 @@ class NetworkFaultInjector:
                 check=True,
             )
         except subprocess.CalledProcessError as e:
+            stderr = e.stderr if e.stderr else ""
+            stdout = e.stdout if e.stdout else ""
             raise RuntimeError(
-                f"Failed to inject fault to container {container}: {e.stderr}"
+                f"Failed to inject fault to container {container}:\n"
+                f"Command: {' '.join(cmd)}\n"
+                f"Exit code: {e.returncode}\n"
+                f"Stdout: {stdout}\n"
+                f"Stderr: {stderr}"
             ) from e
         except subprocess.TimeoutExpired as e:
             raise RuntimeError(
@@ -278,7 +288,7 @@ class NetworkFaultInjector:
         """Remove fault from a specific container.
 
         Args:
-            container: Container ID or name.
+            container: Container ID or name (will be resolved if it's a Kurtosis service name).
 
         Raises:
             RuntimeError: If fault removal fails.
@@ -287,27 +297,15 @@ class NetworkFaultInjector:
             print(f"[DRY-RUN] Would remove faults from container {container}")
             return
 
-        # Get container PID
-        try:
-            pid_result = subprocess.run(
-                ["docker", "inspect", "-f", "{{.State.Pid}}", container],
-                capture_output=True,
-                text=True,
-                timeout=10,
-                check=True,
-            )
-            pid = pid_result.stdout.strip()
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(
-                f"Failed to get PID for container {container}: {e.stderr}"
-            ) from e
+        # Resolve Kurtosis service name to Docker container name
+        container_name = self._resolve_container_name(container)
 
         # Remove tc qdisc (this removes all tc rules)
+        # Use docker exec instead of nsenter for macOS compatibility
         cmd = [
-            "nsenter",
-            "-t",
-            pid,
-            "-n",
+            "docker",
+            "exec",
+            container_name,
             "tc",
             "qdisc",
             "del",
@@ -328,11 +326,94 @@ class NetworkFaultInjector:
             # It's OK if tc qdisc del fails (might not exist)
             pass
 
+    def _ensure_tc_installed(self, container_name: str) -> None:
+        """Ensure tc (traffic control) utility is installed in the container.
+
+        Many Ethereum client containers don't have tc installed by default.
+        This method installs it if needed.
+
+        Args:
+            container_name: Docker container name.
+        """
+        # Check if tc is already available
+        try:
+            result = subprocess.run(
+                ["docker", "exec", container_name, "which", "tc"],
+                capture_output=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                return  # tc is already installed
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            pass
+
+        # Install iproute2 (contains tc)
+        # Try different package managers
+        install_commands = [
+            # Debian/Ubuntu-based
+            ["docker", "exec", container_name, "apt-get", "update"],
+            ["docker", "exec", container_name, "apt-get", "install", "-y", "iproute2"],
+            # Alpine-based (fallback)
+            ["docker", "exec", container_name, "apk", "add", "iproute2"],
+        ]
+
+        for cmd in install_commands:
+            try:
+                subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    timeout=60,
+                    check=False,  # Don't fail if one method doesn't work
+                )
+            except subprocess.TimeoutExpired:
+                continue
+
+    def _resolve_container_name(self, service_name: str) -> str:
+        """Resolve Kurtosis service name to Docker container name.
+
+        Kurtosis creates Docker containers with names like:
+        <enclave-name>--<service-name>--<random-id>
+
+        This method finds the actual Docker container name/ID for a given service.
+
+        Args:
+            service_name: Kurtosis service name (e.g., "cl-1-prysm-nethermind").
+
+        Returns:
+            Docker container name or ID.
+
+        Raises:
+            RuntimeError: If container cannot be found.
+        """
+        try:
+            # Use docker ps to find containers with this service name
+            result = subprocess.run(
+                ["docker", "ps", "--filter", f"name={service_name}", "--format", "{{.Names}}"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=True,
+            )
+            containers = result.stdout.strip().split("\n")
+            containers = [c for c in containers if c]  # Remove empty strings
+
+            if not containers:
+                # Try with just the service name as-is (might be a direct container name)
+                return service_name
+
+            # Return the first match (usually there's only one)
+            return containers[0]
+
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(
+                f"Failed to resolve container name for {service_name}: {e.stderr}"
+            ) from e
+
     def _build_tc_command(self, container: str, fault: NetworkFault) -> list[str]:
         """Build tc/netem command for the fault.
 
         Args:
-            container: Container ID or name.
+            container: Container ID or name (will be resolved if it's a Kurtosis service name).
             fault: Fault configuration.
 
         Returns:
@@ -341,20 +422,8 @@ class NetworkFaultInjector:
         Raises:
             RuntimeError: If container PID cannot be determined.
         """
-        # Get container PID
-        try:
-            pid_result = subprocess.run(
-                ["docker", "inspect", "-f", "{{.State.Pid}}", container],
-                capture_output=True,
-                text=True,
-                timeout=10,
-                check=True,
-            )
-            pid = pid_result.stdout.strip()
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(
-                f"Failed to get PID for container {container}: {e.stderr}"
-            ) from e
+        # Resolve Kurtosis service name to Docker container name
+        container_name = self._resolve_container_name(container)
 
         # Build netem parameters
         netem_params: list[str] = []
@@ -384,12 +453,11 @@ class NetworkFaultInjector:
             ])
 
         # Build tc command
-        # Use nsenter to enter the container's network namespace
+        # Use docker exec to run tc inside the container (works on both Linux and macOS)
         cmd = [
-            "nsenter",
-            "-t",
-            pid,
-            "-n",
+            "docker",
+            "exec",
+            container_name,
             "tc",
             "qdisc",
             "add",

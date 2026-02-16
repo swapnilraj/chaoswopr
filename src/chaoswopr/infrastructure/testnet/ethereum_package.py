@@ -16,9 +16,11 @@ from typing import Any
 
 from chaoswopr.infrastructure.testnet.client_config import ClientConfig
 
-# Pin to a specific ethereum-package release for reproducibility
+# Use main branch for latest compatibility with current client versions
+# Note: main branch is required for compatibility with Prysm and Nethermind latest versions
+# Older pinned versions (4.x) have genesis config incompatibilities (EIP7594/Fulu fork parameters)
 ETHEREUM_PACKAGE_URL = "github.com/ethpandaops/ethereum-package"
-ETHEREUM_PACKAGE_VERSION = "4.2.0"  # Pin version
+ETHEREUM_PACKAGE_VERSION = ""  # Empty string = use main branch
 
 
 @dataclass
@@ -213,4 +215,6 @@ class EthereumPackageConfig:
     @property
     def package_url(self) -> str:
         """Get the ethereum-package URL with version."""
-        return f"{ETHEREUM_PACKAGE_URL}@{ETHEREUM_PACKAGE_VERSION}"
+        if ETHEREUM_PACKAGE_VERSION:
+            return f"{ETHEREUM_PACKAGE_URL}@{ETHEREUM_PACKAGE_VERSION}"
+        return ETHEREUM_PACKAGE_URL  # Use main branch if no version specified
