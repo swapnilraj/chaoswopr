@@ -136,14 +136,14 @@ class KurtosisClient:
     def __init__(
         self,
         backend: KurtosisBackend = KurtosisBackend.DOCKER,
-        kurtosis_binary: str = "kurtosis",
+        kurtosis_binary: str = "/Users/swp/bin/kurtosis-capabilities",
         dry_run: bool = False,
     ) -> None:
         """Initialize the Kurtosis client.
 
         Args:
             backend: Docker or Kubernetes backend.
-            kurtosis_binary: Path to the kurtosis CLI binary.
+            kurtosis_binary: Path to the kurtosis CLI binary (defaults to capabilities-enabled build).
             dry_run: If True, don't execute actual commands.
         """
         self._backend = backend
