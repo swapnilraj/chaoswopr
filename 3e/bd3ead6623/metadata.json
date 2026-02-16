@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "3ebd3ead6623",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/chaoswopr/chaos/cleanup.py",
+    "src/chaoswopr/chaos/partition.py",
+    "tests/unit/test_cleanup.py",
+    "tests/unit/test_partition.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/3e/bd3ead6623/0/metadata.json",
+      "transcript": "/3e/bd3ead6623/0/full.jsonl",
+      "context": "/3e/bd3ead6623/0/context.md",
+      "content_hash": "/3e/bd3ead6623/0/content_hash.txt",
+      "prompt": "/3e/bd3ead6623/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 106,
+    "cache_creation_tokens": 19995,
+    "cache_read_tokens": 1685671,
+    "output_tokens": 2113,
+    "api_call_count": 13
+  }
+}

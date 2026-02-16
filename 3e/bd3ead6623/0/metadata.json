@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "3ebd3ead6623",
+  "session_id": "fc1771d9-6b4e-42c3-af7b-d63b17f57e21",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-16T15:13:38.387881Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/chaoswopr/chaos/cleanup.py",
+    "src/chaoswopr/chaos/partition.py",
+    "tests/unit/test_cleanup.py",
+    "tests/unit/test_partition.py"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "90fc9c11-e949-4705-aa35-5a75cf23d32b",
+  "checkpoint_transcript_start": 4514,
+  "transcript_lines_at_start": 4514,
+  "token_usage": {
+    "input_tokens": 106,
+    "cache_creation_tokens": 19995,
+    "cache_read_tokens": 1685671,
+    "output_tokens": 2113,
+    "api_call_count": 13
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-16T15:13:36.557848Z",
+    "agent_lines": 1475,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1475,
+    "agent_percentage": 100
+  },
+  "transcript_path": ".claude/projects/-Users-swp-dev-swapnilraj-chaoswopr/fc1771d9-6b4e-42c3-af7b-d63b17f57e21.jsonl"
+}
