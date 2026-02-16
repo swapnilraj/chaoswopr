@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "9f50878107e4",
+  "session_id": "d60a458c-1c1a-480b-9644-a88830ad87ad",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-16T14:58:09.621121Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".gitignore",
+    "CLAUDE.md"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "05e722b6-2091-498a-b72d-1fe659a8388c",
+  "token_usage": {
+    "input_tokens": 3034,
+    "cache_creation_tokens": 66135,
+    "cache_read_tokens": 792135,
+    "output_tokens": 4815,
+    "api_call_count": 24
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-16T14:58:09.391878Z",
+    "agent_lines": 119,
+    "human_added": 14618,
+    "human_modified": 5,
+    "human_removed": 0,
+    "total_committed": 14742,
+    "agent_percentage": 0.8072174738841407
+  },
+  "transcript_path": ".claude/projects/-Users-swp-dev-swapnilraj-chaoswopr/d60a458c-1c1a-480b-9644-a88830ad87ad.jsonl"
+}
