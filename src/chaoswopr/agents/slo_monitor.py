@@ -191,9 +191,12 @@ class SLOMonitor:
 
             if is_breach:
                 # Calculate severity based on how much threshold is exceeded
-                excess_percent = abs(
-                    (metric_value - slo.threshold) / slo.threshold * 100
-                )
+                if slo.threshold != 0:
+                    excess_percent = abs(
+                        (metric_value - slo.threshold) / slo.threshold * 100
+                    )
+                else:
+                    excess_percent = abs(metric_value) * 100
                 if excess_percent > 50:
                     severity = "critical"
                 elif excess_percent > 20:

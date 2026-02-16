@@ -1,0 +1,13 @@
+participants:
+  - el_type: geth
+    cl_type: lighthouse
+    count: 2
+  - el_type: nethermind
+    cl_type: teku
+    count: 1
+network_params:
+  seconds_per_slot: 12
+  num_validator_keys_per_node: 128
+additional_services:
+  - prometheus
+  - grafana
