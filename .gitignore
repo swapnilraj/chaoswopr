@@ -1,0 +1,5 @@
+# Claude Code local configuration
+.claude/
+
+# Entire hook local files
+.entire/
