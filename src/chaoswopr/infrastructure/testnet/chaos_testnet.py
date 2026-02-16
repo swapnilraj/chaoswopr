@@ -75,9 +75,9 @@ class ChaosTestnetDeployer(TestnetDeployer):
                 print(f"WARNING: Patched ethereum-package not found at {patched_dir}")
                 print("         Run scripts/patch_ethereum_package.sh to create it")
                 print("         Falling back to upstream package (NET_ADMIN not enabled)")
-                return self._package_config.package_url
+                return self._config.package_url
         else:
-            return self._package_config.package_url
+            return self._config.package_url
 
     def deploy(
         self,
@@ -96,31 +96,74 @@ class ChaosTestnetDeployer(TestnetDeployer):
         Returns:
             DeploymentResult with deployment outcome.
         """
-        # Override package URL if using patched version
-        if self._use_patched_package:
-            original_url = self._package_config._package_url if hasattr(self._package_config, '_package_url') else None
+        if not self._use_patched_package:
+            # Use normal deployment
+            return super().deploy(wait_for_finality, finality_timeout_seconds)
+
+        # Use patched package - need to override the entire deploy to pass custom URL
+        from chaoswopr.infrastructure.testnet.deployer import DeploymentResult, DeploymentState
+
+        result = DeploymentResult(
+            state=DeploymentState.CREATING_ENCLAVE,
+            enclave_name=self._enclave_name,
+            config=self._config.to_dict(),
+        )
+
+        try:
+            # Validate configuration
+            errors = self._config.validate()
+            if errors:
+                result.state = DeploymentState.FAILED
+                result.error_message = f"Configuration errors: {'; '.join(errors)}"
+                self._state = DeploymentState.FAILED
+                self._deployment_result = result
+                return result
+
+            # Step 1: Create enclave
+            self._state = DeploymentState.CREATING_ENCLAVE
+            result.state = DeploymentState.CREATING_ENCLAVE
+            self._kurtosis.create_enclave(self._enclave_name)
+
+            # Step 2: Deploy package with custom URL
+            self._state = DeploymentState.DEPLOYING_PACKAGE
+            result.state = DeploymentState.DEPLOYING_PACKAGE
+            kurtosis_args = self._config.to_kurtosis_args()
+
+            # Use patched package URL
             package_url = self._get_package_url()
+            print(f"Using patched package: {package_url}")
 
-            # Temporarily override the package URL
-            # (This is a bit hacky, but avoids modifying the config)
-            if hasattr(self._package_config, '_package_url'):
-                self._package_config._package_url = package_url
+            self._kurtosis.run_package(
+                self._enclave_name,
+                package_url,  # Use patched package instead of self._config.package_url
+                args=kurtosis_args,
+            )
 
-        # Deploy using parent method
-        result = super().deploy(wait_for_finality, finality_timeout_seconds)
+            # Step 3: Wait for finality (if requested)
+            if wait_for_finality:
+                self._state = DeploymentState.WAITING_FOR_FINALITY
+                result.state = DeploymentState.WAITING_FOR_FINALITY
+                self._wait_for_finality(result, finality_timeout_seconds)
 
-        # Restore original URL if we overrode it
-        if self._use_patched_package and original_url:
-            if hasattr(self._package_config, '_package_url'):
-                self._package_config._package_url = original_url
+            # Mark as running
+            self._state = DeploymentState.RUNNING
+            result.state = DeploymentState.RUNNING
+            result.completed_at = result.started_at
+            result.duration_seconds = (result.completed_at - result.started_at).total_seconds()
 
-        # Add note about NET_ADMIN in result message
-        if result.success and self._use_patched_package:
-            if not result.message:
-                result.message = ""
-            result.message += "\nNET_ADMIN capability enabled for chaos injection"
+            # Collect service info
+            services = self._kurtosis.get_services(self._enclave_name)
+            result.services = {s.name: s.to_dict() for s in services}
 
-        return result
+            self._deployment_result = result
+            return result
+
+        except Exception as e:
+            result.state = DeploymentState.FAILED
+            result.error_message = str(e)
+            self._state = DeploymentState.FAILED
+            self._deployment_result = result
+            return result
 
 
 def create_chaos_testnet(

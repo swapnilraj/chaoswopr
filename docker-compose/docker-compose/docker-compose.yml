@@ -1,0 +1,217 @@
+version: '3.8'
+
+# 4-Node Ethereum Testnet with NET_ADMIN for Chaos Injection
+#
+# Architecture:
+# - 2 Nethermind (EL) + 2 Prysm (CL) validator nodes
+# - Prometheus for monitoring
+# - All containers have NET_ADMIN capability for tc/netem
+
+services:
+  # ==================== Execution Layer (Nethermind) ====================
+
+  el-1:
+    image: nethermindeth/nethermind:latest
+    container_name: el-1-nethermind
+    cap_add:
+      - NET_ADMIN  # Required for tc/netem chaos injection
+    ports:
+      - "8545:8545"   # RPC
+      - "8546:8546"   # WS
+      - "30303:30303" # P2P
+    volumes:
+      - ./config/genesis.json:/nethermind/genesis.json:ro
+      - el1-data:/nethermind/data
+    command:
+      - --config=none
+      - --datadir=/nethermind/data
+      - --Init.ChainSpecPath=/nethermind/genesis.json
+      - --Network.DiscoveryPort=30303
+      - --Network.P2PPort=30303
+      - --JsonRpc.Enabled=true
+      - --JsonRpc.Host=0.0.0.0
+      - --JsonRpc.Port=8545
+      - --JsonRpc.EngineHost=0.0.0.0
+      - --JsonRpc.EnginePort=8551
+      - --JsonRpc.JwtSecretFile=/nethermind/data/jwt.hex
+      - --JsonRpc.EnabledModules=[Eth,Net,Web3,Engine,Admin]
+    networks:
+      - testnet
+    restart: unless-stopped
+
+  el-2:
+    image: nethermindeth/nethermind:latest
+    container_name: el-2-nethermind
+    cap_add:
+      - NET_ADMIN
+    ports:
+      - "8645:8545"
+      - "8646:8546"
+      - "30313:30303"
+    volumes:
+      - ./config/genesis.json:/nethermind/genesis.json:ro
+      - el2-data:/nethermind/data
+    command:
+      - --config=none
+      - --datadir=/nethermind/data
+      - --Init.ChainSpecPath=/nethermind/genesis.json
+      - --Network.DiscoveryPort=30303
+      - --Network.P2PPort=30303
+      - --JsonRpc.Enabled=true
+      - --JsonRpc.Host=0.0.0.0
+      - --JsonRpc.Port=8545
+      - --JsonRpc.EngineHost=0.0.0.0
+      - --JsonRpc.EnginePort=8551
+      - --JsonRpc.JwtSecretFile=/nethermind/data/jwt.hex
+      - --JsonRpc.EnabledModules=[Eth,Net,Web3,Engine,Admin]
+    networks:
+      - testnet
+    restart: unless-stopped
+
+  # ==================== Consensus Layer (Prysm) ====================
+
+  cl-1:
+    image: gcr.io/prysmaticlabs/prysm/beacon-chain:latest
+    container_name: cl-1-prysm
+    cap_add:
+      - NET_ADMIN
+    depends_on:
+      - el-1
+    ports:
+      - "4000:4000"   # HTTP API
+      - "13000:13000" # P2P
+    volumes:
+      - ./config/genesis.ssz:/genesis.ssz:ro
+      - ./config/config.yaml:/config.yaml:ro
+      - cl1-data:/data
+      - el1-data:/el-data:ro
+    command:
+      - --datadir=/data
+      - --min-sync-peers=0
+      - --genesis-state=/genesis.ssz
+      - --chain-config-file=/config.yaml
+      - --execution-endpoint=http://el-1:8551
+      - --jwt-secret=/el-data/jwt.hex
+      - --rpc-host=0.0.0.0
+      - --rpc-port=4000
+      - --grpc-gateway-host=0.0.0.0
+      - --grpc-gateway-port=4000
+      - --accept-terms-of-use
+      - --p2p-tcp-port=13000
+      - --p2p-udp-port=12000
+      - --suggested-fee-recipient=0x0000000000000000000000000000000000000000
+    networks:
+      - testnet
+    restart: unless-stopped
+
+  cl-2:
+    image: gcr.io/prysmaticlabs/prysm/beacon-chain:latest
+    container_name: cl-2-prysm
+    cap_add:
+      - NET_ADMIN
+    depends_on:
+      - el-2
+    ports:
+      - "4100:4000"
+      - "13100:13000"
+    volumes:
+      - ./config/genesis.ssz:/genesis.ssz:ro
+      - ./config/config.yaml:/config.yaml:ro
+      - cl2-data:/data
+      - el2-data:/el-data:ro
+    command:
+      - --datadir=/data
+      - --min-sync-peers=0
+      - --genesis-state=/genesis.ssz
+      - --chain-config-file=/config.yaml
+      - --execution-endpoint=http://el-2:8551
+      - --jwt-secret=/el-data/jwt.hex
+      - --rpc-host=0.0.0.0
+      - --rpc-port=4000
+      - --grpc-gateway-host=0.0.0.0
+      - --grpc-gateway-port=4000
+      - --accept-terms-of-use
+      - --p2p-tcp-port=13000
+      - --p2p-udp-port=12000
+      - --bootstrap-node=enr://<will-be-generated>
+      - --suggested-fee-recipient=0x0000000000000000000000000000000000000000
+    networks:
+      - testnet
+    restart: unless-stopped
+
+  # ==================== Validators ====================
+
+  validator-1:
+    image: gcr.io/prysmaticlabs/prysm/validator:latest
+    container_name: validator-1
+    cap_add:
+      - NET_ADMIN
+    depends_on:
+      - cl-1
+    volumes:
+      - ./config/validator-keys:/keys:ro
+      - validator1-data:/data
+    command:
+      - --datadir=/data
+      - --accept-terms-of-use
+      - --beacon-rpc-provider=cl-1:4000
+      - --wallet-dir=/keys/wallet
+      - --wallet-password-file=/keys/password.txt
+      - --suggested-fee-recipient=0x0000000000000000000000000000000000000000
+    networks:
+      - testnet
+    restart: unless-stopped
+
+  validator-2:
+    image: gcr.io/prysmaticlabs/prysm/validator:latest
+    container_name: validator-2
+    cap_add:
+      - NET_ADMIN
+    depends_on:
+      - cl-2
+    volumes:
+      - ./config/validator-keys:/keys:ro
+      - validator2-data:/data
+    command:
+      - --datadir=/data
+      - --accept-terms-of-use
+      - --beacon-rpc-provider=cl-2:4000
+      - --wallet-dir=/keys/wallet
+      - --wallet-password-file=/keys/password.txt
+      - --suggested-fee-recipient=0x0000000000000000000000000000000000000000
+    networks:
+      - testnet
+    restart: unless-stopped
+
+  # ==================== Monitoring ====================
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    networks:
+      - testnet
+    restart: unless-stopped
+
+networks:
+  testnet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  el1-data:
+  el2-data:
+  cl1-data:
+  cl2-data:
+  validator1-data:
+  validator2-data:
+  prometheus-data:
