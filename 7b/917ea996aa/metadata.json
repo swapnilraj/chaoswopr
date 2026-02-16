@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "7b917ea996aa",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "NET_ADMIN_REQUIREMENTS.md",
+    "QUICK_START_NET_ADMIN.md",
+    "TRACK_H_STATUS.md",
+    "kurtosis-packages/ethereum-chaos/README.md",
+    "kurtosis-packages/ethereum-chaos/main.star",
+    "scripts/auto_patch_net_admin.py",
+    "scripts/patch_ethereum_package.sh",
+    "src/chaoswopr/chaos/network_faults.py",
+    "src/chaoswopr/infrastructure/testnet/chaos_testnet.py",
+    "src/chaoswopr/infrastructure/testnet/ethereum_package.py",
+    "tests/integration_real/conftest.py",
+    "tests/integration_real/test_chaos_real.py",
+    "tests/integration_real/test_net_admin.py",
+    "uv.lock"
+  ],
+  "sessions": [
+    {
+      "metadata": "/7b/917ea996aa/0/metadata.json",
+      "transcript": "/7b/917ea996aa/0/full.jsonl",
+      "context": "/7b/917ea996aa/0/context.md",
+      "content_hash": "/7b/917ea996aa/0/content_hash.txt",
+      "prompt": "/7b/917ea996aa/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 900,
+    "cache_creation_tokens": 225057,
+    "cache_read_tokens": 12321760,
+    "output_tokens": 24273,
+    "api_call_count": 111
+  }
+}

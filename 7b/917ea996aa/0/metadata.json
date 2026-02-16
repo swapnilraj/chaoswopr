@@ -1,0 +1,46 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "7b917ea996aa",
+  "session_id": "fc1771d9-6b4e-42c3-af7b-d63b17f57e21",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-16T16:42:53.950913Z",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "NET_ADMIN_REQUIREMENTS.md",
+    "QUICK_START_NET_ADMIN.md",
+    "TRACK_H_STATUS.md",
+    "kurtosis-packages/ethereum-chaos/README.md",
+    "kurtosis-packages/ethereum-chaos/main.star",
+    "scripts/auto_patch_net_admin.py",
+    "scripts/patch_ethereum_package.sh",
+    "src/chaoswopr/chaos/network_faults.py",
+    "src/chaoswopr/infrastructure/testnet/chaos_testnet.py",
+    "src/chaoswopr/infrastructure/testnet/ethereum_package.py",
+    "tests/integration_real/conftest.py",
+    "tests/integration_real/test_chaos_real.py",
+    "tests/integration_real/test_net_admin.py",
+    "uv.lock"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "f8e4390f-c2f8-4476-8ce3-fe2a01077b75",
+  "checkpoint_transcript_start": 5147,
+  "transcript_lines_at_start": 5147,
+  "token_usage": {
+    "input_tokens": 900,
+    "cache_creation_tokens": 225057,
+    "cache_read_tokens": 12321760,
+    "output_tokens": 24273,
+    "api_call_count": 111
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-16T16:42:47.853126Z",
+    "agent_lines": 1370,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 2761,
+    "total_committed": 1370,
+    "agent_percentage": 100
+  },
+  "transcript_path": ".claude/projects/-Users-swp-dev-swapnilraj-chaoswopr/fc1771d9-6b4e-42c3-af7b-d63b17f57e21.jsonl"
+}
