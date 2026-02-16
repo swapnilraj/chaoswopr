@@ -1,0 +1,42 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "036b0a0c49dc",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CLAUDE.md",
+    "PHASE1_RESULTS.md",
+    "src/chaoswopr/chaos/__init__.py",
+    "src/chaoswopr/chaos/cleanup.py",
+    "src/chaoswopr/chaos/network_faults.py",
+    "src/chaoswopr/chaos/node_faults.py",
+    "src/chaoswopr/chaos/partition.py",
+    "src/chaoswopr/chaos/safe_injector.py",
+    "src/chaoswopr/infrastructure/testnet/ethereum_package.py",
+    "src/chaoswopr/infrastructure/testnet/kurtosis_client.py",
+    "tests/integration_real/test_chaos_real.py",
+    "tests/integration_real/test_kurtosis_real.py",
+    "tests/unit/test_cleanup.py",
+    "tests/unit/test_network_faults.py",
+    "tests/unit/test_node_faults.py",
+    "tests/unit/test_partition.py",
+    "tests/unit/test_safe_injector.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/03/6b0a0c49dc/0/metadata.json",
+      "transcript": "/03/6b0a0c49dc/0/full.jsonl",
+      "context": "/03/6b0a0c49dc/0/context.md",
+      "content_hash": "/03/6b0a0c49dc/0/content_hash.txt",
+      "prompt": "/03/6b0a0c49dc/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 76,
+    "cache_creation_tokens": 21176,
+    "cache_read_tokens": 1353719,
+    "output_tokens": 4883,
+    "api_call_count": 9
+  }
+}
