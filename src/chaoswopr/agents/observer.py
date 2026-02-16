@@ -240,9 +240,9 @@ class ObserverAgent:
                 event = ObservationEvent(
                     event_type=ObservationEventType.ANOMALY_DETECTED,
                     timestamp=now,
-                    metric_name=anomaly.get("metric_name"),
-                    severity=anomaly.get("severity", "warning"),
-                    details=anomaly,
+                    metric_name=anomaly.metric_name,
+                    severity=anomaly.severity,
+                    details=anomaly.to_dict(),
                     experiment_id=self._current_experiment_id,
                 )
                 new_events.append(event)
