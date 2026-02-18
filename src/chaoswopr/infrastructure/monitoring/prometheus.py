@@ -199,11 +199,12 @@ class PrometheusClient:
             )
 
         try:
-            response = self._client.query(promql)
+            # prometheus-api-client returns list of dicts directly
+            result = self._client.custom_query(query=promql)
             return QueryResult(
-                status=response.get("status", "error"),
-                result_type=response.get("data", {}).get("resultType", "vector"),
-                data=response.get("data", {}).get("result", []),
+                status="success",
+                result_type="vector",
+                data=result if isinstance(result, list) else [],
             )
         except Exception as e:
             return QueryResult(

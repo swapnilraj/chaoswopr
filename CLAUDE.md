@@ -8,13 +8,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Structure
 
-**Phase 1 (Foundation) is complete.** Phase 2 (Intelligence) is next.
+**Phase 1 (Foundation) is complete. Phase 2 (Intelligence) agent system is implemented.**
 
 ### Planning Documents
 - **SPEC.md** - Complete technical specification and architecture
 - **IMPLEMENTATION_PLAN.md** - Master plan with 3-phase roadmap, dependency graph, and critical path
 - **PHASE1.md** - Foundation: Infrastructure, monitoring, safety systems (4 tracks, 23 tasks) -- DONE
-- **PHASE2.md** - Intelligence: Agent system, chaos injection, scenarios (4 tracks, 28 tasks)
+- **PHASE2.md** - Intelligence: Agent system, chaos injection, scenarios (4 tracks, 28 tasks) -- AGENT SYSTEM DONE
 - **PHASE3.md** - Analysis & Production: Reporting, compliance, scale testing (4 tracks, 26 tasks)
 
 ### Source Layout (`src/chaoswopr/`)
@@ -23,11 +23,32 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `safety/` - Blast radius, circuit breaker, snapshots, isolation, audit logging, kill switch
 - `scenarios/` - YAML scenario validator (JSON Schema + semantic checks)
 - `storage/` - PostgreSQL (SQLAlchemy ORM) + S3 audit log storage
+- `agents/` - Multi-agent system (see Agent System Architecture below)
 - `cli.py` - Click-based CLI entry point
 
+### Agent System Source (`src/chaoswopr/agents/`)
+- `orchestrator.py` - OrchestratorAgent with state machine (IDLE -> PRE_FLIGHT -> HYPOTHESIS -> PLANNING -> EXECUTING -> MONITORING -> ANALYZING -> REPORTING -> IDLE)
+- `hypothesis_engine.py` - Template-based hypothesis generation with 5 fault templates
+- `plan_compiler.py` - Converts hypotheses to executable ExperimentPlan with PlanActions
+- `fault_dispatcher.py` - Routes fault injection to SafeFaultInjector or Node Agent API
+- `prometheus_tool.py` - Prometheus query interface with consensus-specific queries
+- `node_agent.py` - NodeAgent with BeaconAPIProxy sidecar, mode switching (honest/adversarial)
+- `node_agent_behaviors.py` - 5 adversarial behaviors (attestation withholding, delay, equivocation, censoring, coordinated exit)
+- `node_agent_api.py` - FastAPI REST API for batch node agent commands
+- `node_coordinator.py` - FleetConfig + NodeAgentCoordinator for managing N-agent fleets with 70/30 split
+- `observer.py` - ObserverAgent with observation loop, anomaly/SLO/RCA integration
+- `anomaly_detection.py` - Z-score, CUSUM, and correlation-based anomaly detection
+- `slo_monitor.py` - SLO breach detection with error budgets
+- `rag_pipeline.py` - Document chunking, embedding, cosine similarity retrieval
+- `rca_engine.py` - Root cause analysis engine (mock + LLM modes)
+- `llm_client.py` - LLM client abstraction (MockLLMClient, AnthropicLLMClient, factory)
+- `scenario_loader.py` - YAML scenario loading + ScenarioBuilder for programmatic scenarios
+- `experiment_runner.py` - ExperimentRunner: top-level 5-phase experiment orchestration
+- `messaging/` - Inter-agent communication (protocol.py, message_bus.py, coordinator.py)
+
 ### Test Layout (`tests/`)
-- `unit/` - 394 unit tests (auto-marked with `@pytest.mark.unit`)
-- `integration/` - Cross-track integration tests, storage layer tests (auto-marked `integration`)
+- `unit/` - ~900+ unit tests (auto-marked with `@pytest.mark.unit`)
+- `integration/` - Cross-track, storage, multi-agent coordination tests (auto-marked `integration`)
 - `e2e/` - Exit criteria verification tests (auto-marked `e2e`)
 - `integration_real/` - Real infrastructure tests using Docker/Kurtosis/testcontainers (auto-marked `infra`, skipped without Docker)
 - `e2e_real/` - Real E2E tests deploying full Ethereum testnets (auto-marked `e2e_real`, skipped without Docker+Kurtosis)
@@ -35,10 +56,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `helpers/factories.py` - Test data factories
 - `conftest.py` - Root fixtures shared across all test types
 
-### Config
+### Config & Scenarios
 - `config/schema/scenario_schema.json` - JSON Schema (Draft 2020-12) for scenario YAML
 - `config/testnet/default_network.yaml` - Default 50-node testnet config
-- `scenarios/baseline_observation.yaml` - The baseline observation scenario
+- `scenarios/baseline_observation.yaml` - No-fault baseline observation
+- `scenarios/basic_withholding.yaml` - 30% attestation withholding demo
+- `scenarios/finality_stress_test.yaml` - Multi-fault combined stress test
+
+### Demos (`demos/`)
+- `basic_withholding_demo.py` - End-to-end attestation withholding experiment (dry-run)
+- `finality_stress_test.py` - Multi-fault stress test with comparison (dry-run)
 
 ## Architecture (from SPEC.md)
 
@@ -73,6 +100,43 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 PRE-FLIGHT → HYPOTHESIS → CHAOS → RECOVERY → ANALYSIS
 
 Each phase has specific handoff points between agents.
+
+### Agent System Architecture (Phase 2 - Implemented)
+
+The multi-agent system uses a layered architecture:
+
+```
+ScenarioBuilder/Loader → ExperimentRunner → OrchestratorAgent
+                                          → NodeAgentCoordinator → N x NodeAgent
+                                          → ObserverAgent
+                                          → MessageCoordinator → MessageBus
+```
+
+**ExperimentRunner** (`experiment_runner.py`) is the top-level entry point that:
+1. Creates all subsystems (message bus, safety, orchestrator, fleet, observer)
+2. Runs the 5-phase workflow: preflight -> hypothesis -> planning -> execute/monitor -> analysis
+3. Manages lifecycle and cleanup
+
+**MessageBus** (`messaging/message_bus.py`) provides in-process pub/sub with:
+- Topic-based routing using fnmatch wildcard patterns
+- Topic convention: `agents.<type>.<id>.commands`, `agents.<type>.<id>.responses`, `agents.<type>.events`
+- Thread-safe with history tracking and statistics
+
+**NodeAgentCoordinator** (`node_coordinator.py`) manages the fleet:
+- Creates N NodeAgent instances with configurable honest/adversarial ratio
+- Registers agents with MessageCoordinator for bus-based command handling
+- Batch operations: start_all, stop_all, switch_mode, set_behavior, destroy_fleet
+
+**LLM Integration** (`llm_client.py`):
+- `MockLLMClient` for dry-run and testing (prompt-aware structured responses)
+- `AnthropicLLMClient` for production (Claude API with structured JSON output)
+- Factory function `create_llm_client(provider="mock"|"anthropic")`
+
+**Running Demos** (dry-run, no infrastructure needed):
+```bash
+python demos/basic_withholding_demo.py
+python demos/finality_stress_test.py
+```
 
 ## Key Technical Decisions
 
@@ -184,6 +248,13 @@ python -m pytest tests/e2e_real/ -m e2e_real --timeout=900
 python -m pytest tests/unit/test_circuit_breaker.py
 python -m pytest tests/unit/test_circuit_breaker.py::TestCircuitBreaker::test_trip_on_finality -v
 
+# Run agent system tests
+python -m pytest tests/unit/test_messaging.py tests/unit/test_node_coordinator.py tests/unit/test_experiment_runner.py tests/unit/test_scenario_loader.py tests/unit/test_llm_client.py tests/integration/test_multi_agent_coordination.py -v
+
+# Run demos (no infrastructure needed)
+python demos/basic_withholding_demo.py
+python demos/finality_stress_test.py
+
 # Coverage (excludes real infra tests)
 python -m pytest tests/unit/ tests/integration/ tests/e2e/ --cov=src/chaoswopr --cov-report=term-missing
 
@@ -215,6 +286,20 @@ All 7 exit criteria verified:
 5. Baseline scenario runs end-to-end
 6. Network isolation enforced (mainnet endpoints + public DNS blocked)
 7. 452 tests passing, 83.3% coverage, CI pipeline configured
+
+## Phase 2 Status (AI Agent System)
+
+Phase 2 agent system implementation is complete with the following components:
+
+1. **Messaging Infrastructure**: Message bus with pub/sub, typed protocol (Command, Response, StatusUpdate, Event), agent registry, message coordinator with topic-based routing
+2. **Orchestrator Integration**: ExperimentRunner wiring orchestrator through all 5 phases with state machine transitions
+3. **Node Agent Coordinator**: Fleet management (create/start/stop/destroy), 70/30 honest/adversarial split, batch mode switching, message bus integration
+4. **Scenario System**: YAML loading, programmatic ScenarioBuilder with 5 scenario types (baseline, attestation withholding, network latency, node failure, finality stress test)
+5. **LLM Client**: MockLLMClient for testing, AnthropicLLMClient for production, factory function
+6. **Demo Scenarios**: 2 YAML scenarios (basic_withholding, finality_stress_test), 2 runnable demo scripts
+7. **Test Coverage**: 140 new tests (49 messaging + 22 coordinator + 18 runner + 18 scenario + 19 LLM + 14 integration), all passing
+
+**Key demo**: Orchestrator coordinates 10 node agents (7 honest, 3 adversarial) through a complete attestation withholding experiment, exercising all 5 phases of the workflow.
 
 ## Phase 1.5 Status (Real Infrastructure Testing)
 

@@ -6,15 +6,26 @@ documentation, CVEs, and historical incident reports.
 
 The RCA engine is invoked when the Observer detects issues and provides
 actionable insights for operators.
+
+Supports two modes:
+  - LLM mode: Uses an LLM client for intelligent root cause analysis
+  - Dry-run mode: Generates mock hypotheses for testing
 """
 
 from __future__ import annotations
 
+import json
+import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from chaoswopr.agents.observer import ObservationEvent
+
+if TYPE_CHECKING:
+    from chaoswopr.agents.llm_client import LLMClient
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -366,37 +377,105 @@ class RCAEngine:
     ) -> list[RCAHypothesis]:
         """Generate hypotheses using LLM.
 
+        Constructs a detailed prompt from event and metric summaries,
+        calls the LLM with structured output requirements, and parses
+        the response into RCAHypothesis objects.
+
         Args:
             event_summary: Summary of events.
             metric_summary: Summary of metrics.
             rag_context: RAG context documents.
 
         Returns:
-            List of hypotheses from LLM.
+            List of hypotheses from LLM, or empty list on failure.
         """
-        # In production, would construct prompt and call LLM API
-        # For now, return empty list (would require LLM client setup)
         if not self._llm_client:
             return []
 
+        try:
+            from config.llm_schemas import RCA_SCHEMA, RCA_SYSTEM_PROMPT
+        except ImportError:
+            RCA_SCHEMA = None
+            RCA_SYSTEM_PROMPT = (
+                "You are an expert Ethereum consensus layer engineer performing "
+                "root cause analysis. Respond with valid JSON."
+            )
+
         # Construct prompt
-        context_str = "\n\n".join(rag_context) if rag_context else "No additional context"
+        context_str = "\n\n".join(rag_context) if rag_context else "No additional context available"
 
-        prompt = f"""Analyze the following Ethereum consensus layer events and metrics to determine the root cause.
+        prompt = f"""Analyze the following Ethereum consensus layer events and metrics to determine the root cause of the observed anomalies.
 
-Events:
+## Observation Events
 {event_summary}
 
-Current Metrics:
+## Current Metrics
 {metric_summary}
 
-Relevant Documentation:
+## Relevant Documentation Context
 {context_str}
 
-Generate 1-2 root cause hypotheses with confidence scores (0-1), evidence, and recommendations."""
+## Instructions
+1. Generate 1-3 root cause hypotheses, ordered by confidence (highest first)
+2. Each hypothesis must include:
+   - root_cause: A specific, technical description of the likely cause
+   - confidence: Calibrated score from 0.0 to 1.0
+   - evidence: List of specific observations supporting this hypothesis
+   - recommendations: Actionable steps for operators to investigate or remediate
+3. Consider network-level, node-level, and protocol-level failure modes
+4. Cross-reference metrics for correlated failures
 
-        # Call LLM (placeholder - actual implementation would use LLM API)
-        # response = self._llm_client.generate(prompt)
-        # Parse response into RCAHypothesis objects
+Generate the analysis as a JSON object with a "hypotheses" array."""
 
-        return []
+        try:
+            response = self._llm_client.generate(
+                prompt=prompt,
+                system_prompt=RCA_SYSTEM_PROMPT,
+                json_schema=RCA_SCHEMA,
+                temperature=0.3,
+                max_tokens=1500,
+            )
+        except Exception as e:
+            logger.warning("LLM call failed for RCA: %s", e)
+            return []
+
+        if not response.success:
+            logger.warning("LLM returned error for RCA: %s", response.error)
+            return []
+
+        if not response.structured:
+            logger.warning("LLM response was not structured JSON for RCA")
+            return []
+
+        return self._parse_llm_rca_response(response.structured, rag_context)
+
+    def _parse_llm_rca_response(
+        self,
+        data: dict[str, Any],
+        rag_context: list[str],
+    ) -> list[RCAHypothesis]:
+        """Parse LLM structured output into RCAHypothesis objects.
+
+        Args:
+            data: Parsed JSON from LLM response.
+            rag_context: RAG context used (for related_docs).
+
+        Returns:
+            List of RCAHypothesis objects.
+        """
+        hypotheses: list[RCAHypothesis] = []
+
+        try:
+            for h_data in data.get("hypotheses", []):
+                hypothesis = RCAHypothesis(
+                    root_cause=h_data.get("root_cause", "Unknown"),
+                    confidence=max(0.0, min(1.0, float(h_data.get("confidence", 0.5)))),
+                    evidence=h_data.get("evidence", []),
+                    recommendations=h_data.get("recommendations", []),
+                    related_docs=rag_context[:2] if rag_context else [],
+                )
+                hypotheses.append(hypothesis)
+        except Exception as e:
+            logger.warning("Failed to parse LLM RCA response: %s", e)
+
+        return hypotheses

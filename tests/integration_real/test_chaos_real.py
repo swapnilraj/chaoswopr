@@ -6,14 +6,61 @@ if infrastructure is not available.
 
 WARNING: These tests create real containers and modify their network configuration.
 Always cleanup after tests.
+
+Note: Network fault injection requires tc (iproute2) to be available inside
+containers. Standard Ethereum client containers (Nethermind, Geth, etc.) do not
+include tc by default. The NetworkFaultInjector attempts to install it, but this
+may fail on containers with read-only filesystems or non-standard package managers.
+Tests will be skipped if tc cannot be made available.
 """
 
 from __future__ import annotations
 
+import subprocess
 import time
 import uuid
 
 import pytest
+
+
+def _tc_available_in_container(container_name: str) -> bool:
+    """Check if tc is available or installable in a container.
+
+    Attempts to find tc in the container. If not found, tries to install
+    iproute2 via apt-get or apk, then re-checks.
+
+    Args:
+        container_name: Docker container name or ID.
+
+    Returns:
+        True if tc is available (or was successfully installed).
+    """
+    # Check if tc is already available
+    try:
+        result = subprocess.run(
+            ["docker", "exec", container_name, "which", "tc"],
+            capture_output=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            return True
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+
+    # Try to install iproute2
+    install_attempts = [
+        ["docker", "exec", container_name, "sh", "-c", "apt-get update && apt-get install -y iproute2"],
+        ["docker", "exec", container_name, "sh", "-c", "apk add --no-cache iproute2"],
+    ]
+    for cmd in install_attempts:
+        try:
+            result = subprocess.run(cmd, capture_output=True, timeout=60, check=False)
+            if result.returncode == 0:
+                return True
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            continue
+
+    return False
 
 from chaoswopr.chaos.cleanup import CleanupDaemon
 from chaoswopr.chaos.network_faults import (
@@ -107,6 +154,13 @@ class TestRealNetworkFaults:
         # Get container names (just the service names, not full container IDs)
         container_names = [s.name for s in el_services[:2]]  # Test with 2 EL nodes
 
+        # Verify tc is available in at least one container before proceeding
+        if not any(_tc_available_in_container(name) for name in container_names):
+            pytest.skip(
+                "tc (iproute2) not available in EL containers and could not be installed. "
+                "Use chaos-injector containers with NET_ADMIN for network fault injection."
+            )
+
         # Create network fault injector
         injector = NetworkFaultInjector(dry_run=False)
 
@@ -118,7 +172,13 @@ class TestRealNetworkFaults:
                 packet_loss_percent=20.0,
             )
 
-            fault_id = injector.inject(fault)
+            try:
+                fault_id = injector.inject(fault)
+            except RuntimeError as e:
+                if "tc" in str(e).lower() or "not found" in str(e).lower():
+                    pytest.skip(f"tc command failed in container: {e}")
+                raise
+
             assert fault_id is not None
             assert fault_id.startswith("net-")
 
@@ -160,15 +220,27 @@ class TestRealNetworkFaults:
 
         container_names = [el_services[0].name]
 
+        # Verify tc is available before proceeding
+        if not _tc_available_in_container(container_names[0]):
+            pytest.skip(
+                "tc (iproute2) not available in EL container and could not be installed. "
+                "Use chaos-injector containers with NET_ADMIN for network fault injection."
+            )
+
         injector = NetworkFaultInjector(dry_run=False)
 
         try:
             # Inject 100ms latency
-            fault_id = injector.inject_latency(
-                containers=container_names,
-                latency_ms=100,
-                jitter_ms=10,
-            )
+            try:
+                fault_id = injector.inject_latency(
+                    containers=container_names,
+                    latency_ms=100,
+                    jitter_ms=10,
+                )
+            except RuntimeError as e:
+                if "tc" in str(e).lower() or "not found" in str(e).lower():
+                    pytest.skip(f"tc command failed in container: {e}")
+                raise
 
             assert fault_id is not None
             time.sleep(2)
@@ -238,6 +310,14 @@ class TestRealNetworkPartitions:
         majority = service_names[:3]
         minority = service_names[3:]
 
+        # Verify tc is available in at least one container (partitions use tc under the hood)
+        all_containers = majority + minority
+        if not any(_tc_available_in_container(name) for name in all_containers):
+            pytest.skip(
+                "tc (iproute2) not available in containers and could not be installed. "
+                "Network partition simulation requires tc/netem."
+            )
+
         simulator = PartitionSimulator(dry_run=False)
 
         try:
@@ -250,7 +330,13 @@ class TestRealNetworkPartitions:
                 ],
             )
 
-            partition_id = simulator.create_partition(partition)
+            try:
+                partition_id = simulator.create_partition(partition)
+            except RuntimeError as e:
+                if "tc" in str(e).lower() or "not found" in str(e).lower():
+                    pytest.skip(f"tc command failed during partition creation: {e}")
+                raise
+
             assert partition_id is not None
             assert partition_id.startswith("partition-")
 
@@ -324,6 +410,15 @@ class TestRealSafetyIntegration:
         if len(services) < 2:
             pytest.skip("Not enough services")
 
+        target_container = services[0].name
+
+        # Verify tc is available before proceeding
+        if not _tc_available_in_container(target_container):
+            pytest.skip(
+                "tc (iproute2) not available in target container and could not be installed. "
+                "Use chaos-injector containers with NET_ADMIN for network fault injection."
+            )
+
         # Create safety components
         circuit_breaker = CircuitBreaker()
         circuit_breaker.arm()
@@ -344,11 +439,17 @@ class TestRealSafetyIntegration:
             # Inject fault through safety wrapper
             fault = NetworkFault(
                 fault_type=FaultType.PACKET_LOSS,
-                target_containers=[services[0].name],
+                target_containers=[target_container],
                 packet_loss_percent=10.0,
             )
 
-            result = safe_injector.inject_network_fault(fault)
+            try:
+                result = safe_injector.inject_network_fault(fault)
+            except RuntimeError as e:
+                if "tc" in str(e).lower() or "not found" in str(e).lower():
+                    pytest.skip(f"tc command failed in container: {e}")
+                raise
+
             assert result.success is True
             assert result.fault_id is not None
 
@@ -419,6 +520,15 @@ class TestRealCleanupDaemon:
         if len(services) < 2:
             pytest.skip("Not enough services")
 
+        target_container = services[0].name
+
+        # Verify tc is available before proceeding
+        if not _tc_available_in_container(target_container):
+            pytest.skip(
+                "tc (iproute2) not available in target container and could not be installed. "
+                "Use chaos-injector containers with NET_ADMIN for network fault injection."
+            )
+
         # Create injectors
         network_injector = NetworkFaultInjector(dry_run=False)
         node_injector = NetworkFaultInjector(dry_run=False)  # Placeholder
@@ -438,10 +548,18 @@ class TestRealCleanupDaemon:
             # Inject some faults
             fault = NetworkFault(
                 fault_type=FaultType.PACKET_LOSS,
-                target_containers=[services[0].name],
+                target_containers=[target_container],
                 packet_loss_percent=10.0,
             )
-            fault_id = network_injector.inject(fault)
+
+            try:
+                fault_id = network_injector.inject(fault)
+            except RuntimeError as e:
+                if "tc" in str(e).lower() or "not found" in str(e).lower():
+                    daemon.stop()
+                    pytest.skip(f"tc command failed in container: {e}")
+                raise
+
             daemon.register_fault(fault_id, "network")
 
             # Update heartbeat

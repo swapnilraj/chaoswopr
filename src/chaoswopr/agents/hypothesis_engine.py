@@ -14,8 +14,8 @@ Hypothesis output is validated against a strict schema to ensure
 the experiment plan compiler can process it deterministically.
 
 Supports two modes:
-  - LLM mode: Uses an LLM API for intelligent hypothesis generation
-  - Template mode: Uses pre-defined templates (dry-run, testing)
+  - LLM mode: Uses an LLM client (OpenRouter, Anthropic) for intelligent generation
+  - Template mode: Uses pre-defined templates (dry-run, testing, fallback)
 """
 
 from __future__ import annotations
@@ -27,7 +27,10 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from chaoswopr.agents.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -336,6 +339,10 @@ class HypothesisEngine:
     deterministic testing and LLM-based generation for intelligent hypothesis
     creation.
 
+    When an LLM client is provided and dry_run is False, the engine uses the
+    LLM for intelligent hypothesis generation. Otherwise, it falls back to
+    the template-based approach.
+
     Examples:
         >>> engine = HypothesisEngine(dry_run=True)
         >>> scenario = {"name": "test", "hypothesis": "Test prediction"}
@@ -346,15 +353,19 @@ class HypothesisEngine:
 
     def __init__(
         self,
+        llm_client: LLMClient | None = None,
         experiment_history: list[dict[str, Any]] | None = None,
         dry_run: bool = False,
     ) -> None:
         """Initialize the hypothesis engine.
 
         Args:
+            llm_client: LLM client for intelligent hypothesis generation.
+                If None and dry_run is False, falls back to templates.
             experiment_history: Historical experiment results for adaptive learning.
             dry_run: If True, use template-based generation only.
         """
+        self._llm_client = llm_client
         self._experiment_history = experiment_history or []
         self._dry_run = dry_run
         self._generated_count = 0
@@ -371,6 +382,11 @@ class HypothesisEngine:
         target_percent: float | None = None,
     ) -> Hypothesis:
         """Generate a hypothesis from a scenario.
+
+        When an LLM client is available and dry_run is False, uses the LLM
+        for intelligent hypothesis generation. Falls back to template-based
+        generation for dry_run mode, when no LLM client is configured, or
+        when the LLM call fails.
 
         Args:
             scenario: Loaded scenario dictionary (from YAML).
@@ -395,16 +411,33 @@ class HypothesisEngine:
         fault_sequence = scenario.get("fault_sequence", [])
         slo_thresholds = scenario.get("slo_thresholds", {})
 
-        # Select template based on fault sequence analysis
-        template_key = self._select_template(fault_sequence, scenario)
+        # Try LLM-based generation if available and not in dry_run mode
+        hypothesis = None
+        if (
+            not self._dry_run
+            and self._llm_client is not None
+            and self._llm_client.is_available()
+        ):
+            hypothesis = self._generate_with_llm(
+                scenario=scenario,
+                cluster_state=cluster_state,
+                target_percent=target_percent,
+            )
+            if hypothesis is not None:
+                logger.info(
+                    "Generated hypothesis via LLM for scenario '%s'",
+                    scenario_name,
+                )
 
-        # Generate hypothesis
-        hypothesis = self._generate_from_template(
-            template_key=template_key,
-            scenario=scenario,
-            cluster_state=cluster_state,
-            target_percent=target_percent,
-        )
+        # Fallback to template-based generation
+        if hypothesis is None:
+            template_key = self._select_template(fault_sequence, scenario)
+            hypothesis = self._generate_from_template(
+                template_key=template_key,
+                scenario=scenario,
+                cluster_state=cluster_state,
+                target_percent=target_percent,
+            )
 
         # Enrich with scenario-specific SLO thresholds
         hypothesis = self._enrich_with_slo(hypothesis, slo_thresholds, cluster_state)
@@ -700,6 +733,196 @@ class HypothesisEngine:
                     )
 
         return hypothesis
+
+    def _generate_with_llm(
+        self,
+        scenario: dict[str, Any],
+        cluster_state: dict[str, float],
+        target_percent: float,
+    ) -> Hypothesis | None:
+        """Generate a hypothesis using the LLM client.
+
+        Constructs a prompt from the scenario and cluster state, calls the LLM
+        with structured output requirements, and parses the response into a
+        Hypothesis object.
+
+        Args:
+            scenario: Scenario dictionary from YAML.
+            cluster_state: Current cluster metrics.
+            target_percent: Target blast radius percentage.
+
+        Returns:
+            Generated Hypothesis, or None if LLM call failed.
+        """
+        if self._llm_client is None:
+            return None
+
+        try:
+            from config.llm_schemas import HYPOTHESIS_SCHEMA, HYPOTHESIS_SYSTEM_PROMPT
+        except ImportError:
+            # Fallback schemas if config package not available
+            HYPOTHESIS_SCHEMA = None
+            HYPOTHESIS_SYSTEM_PROMPT = (
+                "You are an expert Ethereum consensus layer engineer. "
+                "Generate a structured, testable hypothesis for a chaos experiment. "
+                "Respond with valid JSON."
+            )
+
+        prompt = self._build_hypothesis_prompt(scenario, cluster_state, target_percent)
+
+        try:
+            response = self._llm_client.generate(
+                prompt=prompt,
+                system_prompt=HYPOTHESIS_SYSTEM_PROMPT,
+                json_schema=HYPOTHESIS_SCHEMA,
+                temperature=0.7,
+                max_tokens=2000,
+            )
+        except Exception as e:
+            logger.warning("LLM call failed for hypothesis generation: %s", e)
+            return None
+
+        if not response.success:
+            logger.warning("LLM returned error: %s", response.error)
+            return None
+
+        if not response.structured:
+            logger.warning("LLM response was not structured JSON")
+            return None
+
+        return self._parse_llm_hypothesis(response.structured, scenario)
+
+    def _build_hypothesis_prompt(
+        self,
+        scenario: dict[str, Any],
+        cluster_state: dict[str, float],
+        target_percent: float,
+    ) -> str:
+        """Build a prompt for LLM hypothesis generation.
+
+        Args:
+            scenario: Scenario dictionary.
+            cluster_state: Current cluster metrics.
+            target_percent: Target blast radius percentage.
+
+        Returns:
+            Formatted prompt string.
+        """
+        scenario_name = scenario.get("name", "unknown")
+        scenario_hypothesis = scenario.get("hypothesis", "Not specified")
+        fault_sequence = scenario.get("fault_sequence", [])
+        slo_thresholds = scenario.get("slo_thresholds", {})
+
+        # Format fault sequence
+        fault_desc = "None specified"
+        if fault_sequence:
+            steps = []
+            for step in fault_sequence:
+                action = step.get("action", "unknown")
+                time = step.get("time", "0s")
+                params = step.get("params", {})
+                param_str = ", ".join(f"{k}={v}" for k, v in params.items()) if params else ""
+                steps.append(f"  - t={time}: {action}" + (f" ({param_str})" if param_str else ""))
+            fault_desc = "\n".join(steps)
+
+        # Format SLO thresholds
+        slo_desc = "None specified"
+        if slo_thresholds:
+            slo_desc = "\n".join(f"  - {k}: {v}" for k, v in slo_thresholds.items())
+
+        # Format cluster state
+        state_desc = "Not available"
+        if cluster_state:
+            state_desc = "\n".join(f"  - {k}: {v:.2f}" for k, v in cluster_state.items())
+
+        return f"""Generate a structured hypothesis for the following Ethereum chaos engineering experiment.
+
+## Scenario
+Name: {scenario_name}
+Initial Hypothesis: {scenario_hypothesis}
+Target Blast Radius: {target_percent}%
+
+## Fault Sequence
+{fault_desc}
+
+## SLO Thresholds
+{slo_desc}
+
+## Current Cluster State
+{state_desc}
+
+## Requirements
+1. The fault_timeline MUST start with a baseline action at t=0s and end with a complete action
+2. blast_radius_percent MUST be <= {min(target_percent, 33.0)}%
+3. All fault action target_percent values MUST be <= blast_radius_percent
+4. Timeline MUST be in chronological order
+5. Include at least one fault injection action, one observe action, and one remove_faults action
+6. Provide specific, measurable success and failure criteria
+
+Generate the hypothesis as a JSON object."""
+
+    def _parse_llm_hypothesis(
+        self,
+        data: dict[str, Any],
+        scenario: dict[str, Any],
+    ) -> Hypothesis | None:
+        """Parse LLM structured output into a Hypothesis object.
+
+        Args:
+            data: Parsed JSON from LLM response.
+            scenario: Original scenario dictionary.
+
+        Returns:
+            Hypothesis object, or None if parsing failed.
+        """
+        try:
+            # Parse fault timeline
+            fault_timeline = []
+            for action_data in data.get("fault_timeline", []):
+                fault_level_str = action_data.get("fault_level", "network")
+                try:
+                    fault_level = FaultLevel(fault_level_str)
+                except ValueError:
+                    fault_level = FaultLevel.NETWORK
+
+                fault_timeline.append(FaultAction(
+                    time_offset_seconds=int(action_data.get("time_offset_seconds", 0)),
+                    action_type=action_data.get("action_type", "unknown"),
+                    fault_level=fault_level,
+                    target_percent=float(action_data.get("target_percent", 0)),
+                    parameters=action_data.get("parameters", {}),
+                    description=action_data.get("description", ""),
+                ))
+
+            # Parse expected metrics
+            expected_metrics = []
+            for metric_data in data.get("expected_metrics", []):
+                expected_metrics.append(ExpectedMetric(
+                    metric_name=metric_data.get("metric_name", "unknown"),
+                    baseline_value=float(metric_data.get("baseline_value", 0.0)),
+                    expected_min=float(metric_data.get("expected_min", 0.0)),
+                    expected_max=float(metric_data.get("expected_max", float("inf"))),
+                    recovery_time_seconds=int(metric_data.get("recovery_time_seconds", 300)),
+                ))
+
+            hypothesis = Hypothesis(
+                prediction=data.get("prediction", ""),
+                rationale=data.get("rationale", ""),
+                fault_timeline=fault_timeline,
+                expected_metrics=expected_metrics,
+                blast_radius_percent=min(float(data.get("blast_radius_percent", 10.0)), 33.0),
+                success_criteria=data.get("success_criteria", ""),
+                failure_criteria=data.get("failure_criteria", ""),
+                scenario_name=scenario.get("name", "unknown"),
+                confidence=max(0.0, min(1.0, float(data.get("confidence", 0.5)))),
+                tags=data.get("tags", []),
+            )
+
+            return hypothesis
+
+        except Exception as e:
+            logger.warning("Failed to parse LLM hypothesis output: %s", e)
+            return None
 
     def _apply_adaptive_learning(
         self,

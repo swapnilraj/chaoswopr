@@ -1,0 +1,78 @@
+version: "1.0"
+name: basic_withholding
+description: >
+  Tests Ethereum consensus resilience under attestation withholding.
+  30% of validators withhold attestations while monitoring finality delay,
+  participation rate, and slashing events. This recreates a key failure
+  mode where adversarial validators stop attesting to disrupt consensus.
+hypothesis: >
+  The Ethereum testnet maintains finality when 30% of validators
+  withhold attestations, with finality delay staying below 5 epochs
+  and no slashing events occurring
+network_config:
+  node_count: 10
+  client_distribution:
+    execution:
+      nethermind: 0.4
+      geth: 0.3
+      besu: 0.15
+      erigon: 0.15
+    consensus:
+      prysm: 0.4
+      lighthouse: 0.3
+      teku: 0.15
+      nimbus: 0.15
+  mev_enabled: false
+  tx_spammer_tps: 50
+fault_sequence:
+  - time: "0s"
+    action: baseline
+    description: >
+      Establish baseline metrics. Collect finality delay, participation rate,
+      peer counts, and attestation inclusion distances over 60 seconds.
+  - time: "60s"
+    action: attestation_withholding
+    params:
+      target_percent: 30
+      withhold_probability: 1.0
+    description: >
+      Begin attestation withholding. 30% of validators (selected as
+      adversarial nodes) stop publishing attestations. Monitor for
+      finality degradation and participation drop.
+  - time: "360s"
+    action: observe
+    description: >
+      Mid-experiment observation. Check if finality is still progressing
+      and whether the network has adapted to the missing attestations.
+  - time: "660s"
+    action: remove_faults
+    description: >
+      Remove attestation withholding. All adversarial validators resume
+      normal attestation behavior. Begin monitoring recovery.
+  - time: "960s"
+    action: complete
+    description: >
+      End experiment. Collect final metrics, compare against baseline,
+      generate experiment report and audit log entries.
+slo_thresholds:
+  finality_delay_max_epochs: 5
+  slashing_rate_max_percent: 5.0
+  participation_rate_min_percent: 66.0
+  recovery_time_max_seconds: 300
+blast_radius:
+  max_affected_percent: 30.0
+  phased_rollout:
+    - 10
+    - 20
+    - 30
+success_criteria: >
+  Finality maintained (delay below 5 epochs) during attestation withholding,
+  participation rate stays above 66%, no slashing events, and full recovery
+  within 5 minutes after fault removal.
+tags:
+  - attestation
+  - withholding
+  - protocol-level
+  - finality
+  - demo
+timeout: "20m"

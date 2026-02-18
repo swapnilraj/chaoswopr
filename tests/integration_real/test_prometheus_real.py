@@ -112,29 +112,57 @@ class TestRealPrometheusDeployment:
         Note: The current PrometheusClient uses a mock client interface.
         This test verifies we can query Prometheus directly via HTTP
         as the future production implementation will.
+
+        Prometheus may need a few seconds after startup to scrape itself
+        and populate metrics, so we retry with backoff.
         """
         base_url, _ = prometheus_instance
 
-        # Direct HTTP query (production-ready approach)
-        resp = requests.get(
-            f"{base_url}/api/v1/query",
-            params={"query": "prometheus_build_info"},
-            timeout=5,
+        # Retry with backoff since Prometheus needs time to self-scrape
+        results = []
+        for attempt in range(10):
+            resp = requests.get(
+                f"{base_url}/api/v1/query",
+                params={"query": "prometheus_build_info"},
+                timeout=5,
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["status"] == "success"
+            results = data.get("data", {}).get("result", [])
+            if results:
+                break
+            time.sleep(2)
+
+        assert len(results) > 0, (
+            "prometheus_build_info returned no results after retries. "
+            "Prometheus may not have completed its first self-scrape."
         )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["status"] == "success"
-        assert len(data.get("data", {}).get("result", [])) > 0
 
     def test_prometheus_scrape_targets(self, prometheus_instance: tuple[str, any]) -> None:
-        """Prometheus should have default scrape targets configured."""
+        """Prometheus should have default scrape targets configured.
+
+        Prometheus may need a few seconds after startup before targets
+        appear in the targets API, so we retry with backoff.
+        """
         base_url, _ = prometheus_instance
-        resp = requests.get(f"{base_url}/api/v1/targets", timeout=5)
-        assert resp.status_code == 200
-        data = resp.json()
-        # Should have at least itself as a target
-        targets = data.get("data", {}).get("activeTargets", [])
-        assert len(targets) > 0
+
+        # Retry with backoff since targets may not appear immediately
+        targets = []
+        for attempt in range(10):
+            resp = requests.get(f"{base_url}/api/v1/targets", timeout=5)
+            assert resp.status_code == 200
+            data = resp.json()
+            # Should have at least itself as a target
+            targets = data.get("data", {}).get("activeTargets", [])
+            if targets:
+                break
+            time.sleep(2)
+
+        assert len(targets) > 0, (
+            "No active scrape targets found after retries. "
+            "Prometheus may not have initialized its target discovery."
+        )
 
     def test_alert_rules_format(self, prometheus_instance: tuple[str, any]) -> None:
         """Our alert rules should generate valid Prometheus rule format."""

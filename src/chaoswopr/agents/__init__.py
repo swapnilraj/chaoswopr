@@ -4,6 +4,9 @@ This module contains the multi-agent system including:
 - Orchestrator Agent: Master controller coordinating experiments (Track E)
 - Node Agents: AI agents controlling individual validator nodes (Track F)
 - Observer Agent: Specialized anomaly detection and root cause analysis (Track G)
+- LLM Clients: OpenRouter, Anthropic, and Mock LLM integrations
+- Messaging: Inter-agent communication infrastructure
+- Experiment Runner: Top-level end-to-end experiment orchestration
 """
 
 from __future__ import annotations
@@ -47,6 +50,10 @@ from chaoswopr.agents.node_agent import (
     NodeAgentConfig,
     NodeAgentStatus,
 )
+from chaoswopr.agents.node_coordinator import (
+    FleetConfig,
+    NodeAgentCoordinator,
+)
 
 # Observer Agent (Track G)
 from chaoswopr.agents.anomaly_detection import (
@@ -73,6 +80,45 @@ from chaoswopr.agents.rca_engine import (
 from chaoswopr.agents.slo_monitor import (
     SLODefinition,
     SLOMonitor,
+)
+
+# Messaging Infrastructure
+from chaoswopr.agents.messaging import (
+    AgentRegistry,
+    AgentState,
+    AgentType,
+    Command,
+    CommandType,
+    Event,
+    EventType,
+    Message,
+    MessageBus,
+    MessageCoordinator,
+    MessageType,
+    Response,
+    StatusUpdate,
+    Subscription,
+)
+
+# LLM Clients
+from chaoswopr.agents.llm_client import (
+    AnthropicLLMClient,
+    LLMClient,
+    LLMResponse,
+    MockLLMClient,
+    create_llm_client,
+    create_llm_client_from_config,
+)
+from chaoswopr.agents.openrouter_client import (
+    OpenRouterAPIError,
+    OpenRouterLLMClient,
+)
+
+# Experiment Runner (End-to-End)
+from chaoswopr.agents.experiment_runner import (
+    ExperimentResult,
+    ExperimentRunner,
+    ExperimentRunnerConfig,
 )
 
 __all__ = [
@@ -102,6 +148,8 @@ __all__ = [
     "NodeAgentConfig",
     "AgentMode",
     "NodeAgentStatus",
+    "FleetConfig",
+    "NodeAgentCoordinator",
     # Observer Agent (Track G)
     "ObserverAgent",
     "ObserverState",
@@ -122,4 +170,32 @@ __all__ = [
     "RAGPipeline",
     "Document",
     "RetrievalResult",
+    # Messaging Infrastructure
+    "Message",
+    "MessageType",
+    "Command",
+    "CommandType",
+    "Response",
+    "StatusUpdate",
+    "Event",
+    "EventType",
+    "AgentType",
+    "MessageBus",
+    "Subscription",
+    "MessageCoordinator",
+    "AgentRegistry",
+    "AgentState",
+    # LLM Clients
+    "LLMClient",
+    "LLMResponse",
+    "MockLLMClient",
+    "AnthropicLLMClient",
+    "OpenRouterLLMClient",
+    "OpenRouterAPIError",
+    "create_llm_client",
+    "create_llm_client_from_config",
+    # Experiment Runner
+    "ExperimentRunner",
+    "ExperimentRunnerConfig",
+    "ExperimentResult",
 ]

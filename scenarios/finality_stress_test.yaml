@@ -1,0 +1,89 @@
+version: "1.0"
+name: finality_stress_test
+description: >
+  Multi-fault finality stress test combining network latency injection
+  with attestation withholding. Tests the consensus layer under compound
+  failure conditions that are more realistic than single-fault scenarios.
+  This approximates the May 2023 finality loss incident where multiple
+  factors contributed to consensus degradation.
+hypothesis: >
+  The Ethereum testnet recovers finality after combined network latency
+  injection (200ms on 20% of nodes) and 30% attestation withholding,
+  with recovery completing within 5 minutes of fault removal
+network_config:
+  node_count: 10
+  client_distribution:
+    execution:
+      nethermind: 0.4
+      geth: 0.3
+      besu: 0.15
+      erigon: 0.15
+    consensus:
+      prysm: 0.4
+      lighthouse: 0.3
+      teku: 0.15
+      nimbus: 0.15
+  mev_enabled: false
+  tx_spammer_tps: 100
+fault_sequence:
+  - time: "0s"
+    action: baseline
+    description: >
+      Establish baseline. Collect all consensus metrics including finality
+      delay, participation rate, attestation inclusion distance, and peer
+      counts. Record a minimum of 5 epoch baselines.
+  - time: "60s"
+    action: inject_network_latency
+    params:
+      nodes: "20%"
+      latency: "200ms"
+      jitter: "50ms"
+    description: >
+      Phase 1: Inject 200ms network latency on 20% of nodes. This degrades
+      P2P gossip propagation and increases attestation inclusion delay.
+      Monitor for participation rate impact.
+  - time: "360s"
+    action: attestation_withholding
+    params:
+      target_percent: 30
+      withhold_probability: 1.0
+    description: >
+      Phase 2: Begin attestation withholding on 30% of validators while
+      network latency remains active. Combined stress should push consensus
+      closer to its fault tolerance boundary.
+  - time: "660s"
+    action: remove_faults
+    description: >
+      Remove all faults. Both network latency injection and attestation
+      withholding are stopped. Begin monitoring recovery behavior.
+  - time: "960s"
+    action: complete
+    description: >
+      End experiment. Collect final metrics, perform statistical comparison
+      with baseline, generate resilience certification and audit report.
+slo_thresholds:
+  finality_delay_max_epochs: 5
+  slashing_rate_max_percent: 5.0
+  participation_rate_min_percent: 66.0
+  recovery_time_max_seconds: 300
+blast_radius:
+  max_affected_percent: 30.0
+  phased_rollout:
+    - 10
+    - 20
+    - 30
+success_criteria: >
+  Finality recovers within 5 minutes after all faults are removed.
+  No slashing events occur during the experiment. Participation rate
+  stays above 66% (the 2/3 supermajority threshold) throughout.
+  The network demonstrates graceful degradation during faults rather
+  than catastrophic failure.
+tags:
+  - finality
+  - stress-test
+  - multi-fault
+  - combined
+  - network-latency
+  - attestation-withholding
+  - demo
+timeout: "25m"
